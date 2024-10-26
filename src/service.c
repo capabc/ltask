@@ -43,29 +43,98 @@ struct memory_stat {
 	size_t limit;
 };
 
+// struct service 确保了 Ltask 系统能够灵活地管理多个服务实例，通过有效的消息传递和状态管理，支持高效的任务调度。
 struct service {
+	// 指向当前 lua_State的指针。每个服务在执行其逻辑时会使用此lua_State来运行 Lua 代码.
 	lua_State *L;
+	/*
+		lua_State 是 Lua 编程语言的核心数据结构，用于表示一个独立的 Lua 解释器状态。
+		每个 lua_State 实例封装了一个 Lua 虚拟机，包括其堆栈、全局变量和其他运行时信息。这使得 Lua 能够在多线程或多协程环境中安全地运行多个独立的脚本
+		主要特点
+			1. 状态管理：每个 lua_State 保存了独立的 Lua 状态，包括栈、全局环境等，允许多个 Lua 代码片段并行运行而不会相互干扰。
+
+			2. 内存管理：Lua 使用自动内存管理（垃圾回收），lua_State 结构包含指向 Lua 内部内存管理系统的数据，使得资源的分配和释放更加高效。
+			
+			3. C API 交互：通过 lua_State，C/C++ 程序可以与 Lua 脚本进行交互。Lua 提供了一套 C API，允许开发者推入和弹出栈上的数据，以便在 C 代码和 Lua 之间传递信息。
+			
+			4. 协程支持：lua_State 也支持协程，使得程序可以在单线程中实现异步和非阻塞的操作。
+
+		示例用途
+			1. 在游戏开发中，lua_State 可以用来创建独立的游戏脚本实例，每个游戏对象可能都有自己的脚本状态。
+			2. 在服务器应用中，可以为每个客户端请求分配一个 lua_State，以便处理各自的逻辑。
+
+		更多内容见：
+			https://www.lua.org/manual/5.1/
+		
+		以下是官网描述：
+		lua_State  typedef struct lua_State lua_State;
+		
+		Opaque structure that keeps the whole state of a Lua interpreter. 
+		lua_State 是一个封装了整个 Lua 解释器状态的结构体。
+
+		The Lua library is fully reentrant: it has no global variables. All information about a state is kept in this structure.
+		Lua 库是完全可重入的：它没有全局变量。与状态相关的所有信息都保存在这个结构体中。
+
+		A pointer to this state must be passed as the first argument to every function in the library, except to lua_newstate, which creates a Lua state from scratch.
+		// 在调用库中的每个函数时，必须将指向这个状态的指针作为第一个参数传递，除了 lua_newstate 函数，它用于从头创建一个新的 Lua 状态。
+	*/
+
+	// 指向另一个 lua_State的指针。可能用于支持协程或并行任务处理，允许服务异步执行
 	lua_State *rL;
+
+	// 指向消息队列的指针。服务通过此队列接收来自其他服务或外部系统的消息。
 	struct queue *msg;
+
+	// 指向输出消息的指针。用于存储当前服务准备发送的消息。
 	struct message *out;
+
+	// 指向反弹消息的指针。用于处理需要返回给发送者的消息，通常在服务出错时使用。 
 	struct message *bounce;
+
+	// 服务的当前状态，通常包括运行中、等待、阻塞或已停止等状态，用于调度和管理服务。
 	int status;
+
+	// 消息接收计数器，跟踪该服务接收到的消息数量，便于统计和监控。
 	int receipt;
+
+	// 表示绑定到此服务的工作线程的 ID，帮助调度器了解哪个线程在处理该服务的请求。
 	int binding_thread;
+
+	// 用于sockevent的 ID，通常与事件通知系统关联，帮助处理网络事件。
 	int sockevent_id;
+
+	// 服务的唯一标识符，这个 ID 用于在系统中唯一标识每个服务实例，确保管理的精确性。 
 	service_id id;
+
+	// 服务的标签，用于给服务一个可读的名称或描述，便于调试和日志记录。
 	char label[32];
+
+	// 内存统计信息，记录该服务使用的内存数据，以帮助性能分析和资源管理。
 	struct memory_stat stat;
+
+	// 记录服务消耗的 CPU 时间，通常用于性能监控，帮助评估服务效率。
 	uint64_t cpucost;
+
+	// 记录服务的时钟时间戳，用于处理超时或调度逻辑，帮助调度器决定服务的运行顺序。
 	uint64_t clock;
 };
 
+
+// struct service_pool 的设计允许 Ltask 系统有效地管理和调度多个服务实例，为系统的扩展性和灵活性提供了支持
 struct service_pool {
+	// 这个字段可能用于位掩码操作，可以帮助快速过滤服务的状态或特性。例如，它可以用来标识哪些服务是可用的、正在运行的，或者其他状态信息。
 	int mask;
+
+	// 表示当前服务池中服务的数量。此字段对于监控服务的数量和动态调整资源非常重要。
 	int queue_length;
+
+	// 服务池的唯一标识符。这个 ID 使得不同的服务池可以被区分和管理，确保在系统中不会出现冲突.
 	unsigned int id;
+
+	// 这是一个指向服务指针的指针，实际上是一个动态数组，存储了所有服务的指针。通过这个结构，服务可以动态添加或移除，灵活地管理服务的生命周期。
 	struct service **s;
 };
+
 
 struct service_pool *
 service_create(struct ltask_config *config) {

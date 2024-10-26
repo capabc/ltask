@@ -2,3 +2,5 @@
 build/*
 *.so
 *.dll
+# 忽略 vscode 目录, 注意： 以 / 结尾的路径表示目录
+.vscode/

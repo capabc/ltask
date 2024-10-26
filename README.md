@@ -1,6 +1,8 @@
 ltask: Yet another lua task library
 ============================
 
+ps: 对ltask的一个百分百注释。
+
 ltask is inspired by skynet (https://github.com/cloudwu/skynet) , but it's a library rather than a framework.
 
 It implement an n:m scheduler , so that you can run M lua VMs on N OS threads.

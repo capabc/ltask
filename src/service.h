@@ -20,7 +20,9 @@ struct service_pool;
 struct ltask_config;
 struct message;
 
+// 在 Ltask 系统中，这个 service_id 很可能用于标识各个服务的实例，以便调度器能够准确管理和调用不同的服务
 typedef struct {
+	// 表示一个服务的唯一标识符
 	unsigned int id;
 } service_id;
 

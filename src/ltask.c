@@ -27,41 +27,81 @@
 #include "systime.h"
 #include "threadsig.h"
 
+// LUAMOD_API 用于向 Lua 注册 C 函数。luaopen_<module_name> 格式是 Lua 加载模块时默认调用的入口函数
+	// 函数名称中包含 ltask、ltask_bootstrap 和 ltask_root，因此可以推测该模块包含多个子模块。
+	// lua_State *L 是 Lua 虚拟机的上下文指针。
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
 LUAMOD_API int luaopen_ltask_root(lua_State *L);
 
+// 定义了一个宏 THREAD_NONE，表示无线程状态，使用 -1 表示无效线程 ID。
 #define THREAD_NONE -1
+// 定义了一个宏 THREAD_WORKER，用来表示工作线程的 ID，n 是传入的线程编号。这个宏只是简单返回传入的 n 值，可能用于将工作线程标记为特定编号
 #define THREAD_WORKER(n) (n)
 
 #ifndef DEBUGLOG
-
+// 如果 DEBUGLOG 未定义：定义 debug_printf(logger, fmt, ...) 为一个空宏，这样调用 debug_printf 将不会输出任何信息，适用于发布模式。
 #define debug_printf(logger, fmt, ...)
 
 #else
-
+// 如果 DEBUGLOG 定义, 将 debug_printf 定义为 dlog_write，这意味着 debug_printf 将映射到 dlog_write 函数。
 #define debug_printf dlog_write
 
 #endif
 
+
+
+// struct ltask 是 一个用于多线程任务调度和管理的结构体，包含了各种配置、线程管理、事件、服务池、消息队列、日志、定时器等。
 struct ltask {
+	// 指向 ltask 配置结构的指针。这个配置可能包含了任务的基本参数，如线程数量、最大事件数等。
 	const struct ltask_config *config;
-	struct worker_thread *workers;
+	
+	// 指向工作线程的指针数组，管理和调度任务的工作线程
+	struct worker_thread *workers;		
+
+	// 使用 atomic_int 类型的数组表示初始化状态的事件，保证在多线程环境下的原子操作，以确保线程安全。
+	//	MAX_SOCKEVENT 表示可以处理的最大套接字事件数, 默认为16
 	atomic_int event_init[MAX_SOCKEVENT];
+	
+	// sockevent数组，存储事件通知机制的相关信息，允许多线程间有效通信
 	struct sockevent event[MAX_SOCKEVENT];
+
+	// 指向服务池的指针，管理正在运行的服务及其状态，以便有效调度和管理服务
 	struct service_pool *services;
+
+	// 指向调度队列的指针，存储待调度的任务和服务请求，确保任务的有序执行
 	struct queue *schedule;
+
+	// 指向定时器的指针，用于处理定时任务和超时管理，允许服务定时执行或超时。
 	struct timer *timer;
+
+	// 指向调试日志记录器的指针，仅在启用调试模式下使用，用于捕捉系统运行时的调试信息。
 #ifdef DEBUGLOG
 	struct debug_logger *logger;
 #endif
+
+    // 指向日志队列的指针，用于存储日志消息，确保日志记录的顺序和完整性。
 	struct logqueue *lqueue;
+
+	// 指向外部消息队列的指针，存储来自外部系统的消息，支持与其他系统的交互。
 	struct queue *external_message;
+
+	// 指向最后接收的外部消息的指针，可能用于处理响应或进行后续操作。
 	struct message *external_last_message;
+	
+	// 原子整数，表示当前调度的所有者，确保调度过程中的线程安全。
 	atomic_int schedule_owner;
+
+	// 原子整数，表示当前活动的工作线程数量，用于监控并发状态。
 	atomic_int active_worker;
+
+	// 原子整数，表示总线程数，用于管理线程池的大小和资源分配。
 	atomic_int thread_count;
+
+	// 表示阻塞的服务数量，某些绑定服务可能会导致线程阻塞，影响系统性能。
 	int blocked_service;		// binding service may block
+
+	// 指向日志文件的指针，用于写入系统日志，帮助调试和分析问题。	
 	FILE *logfile;
 };
 

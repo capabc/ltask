@@ -50,8 +50,9 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 #endif
 
 
-
-// struct ltask 是 一个用于多线程任务调度和管理的结构体，包含了各种配置、线程管理、事件、服务池、消息队列、日志、定时器等。
+/*
+	struct ltask 是 一个用于多线程任务调度和管理的结构体，包含了各种配置、线程管理、事件、服务池、消息队列、日志、定时器等。
+*/
 struct ltask {
 	// 指向 ltask 配置结构的指针。这个配置可能包含了任务的基本参数，如线程数量、最大事件数等。
 	const struct ltask_config *config;
@@ -105,8 +106,18 @@ struct ltask {
 	FILE *logfile;
 };
 
+/*
+	service_ud 结构体用于在系统中传递与特定服务相关的上下文信息。
+
+	它包含指向任务的指针和服务的唯一标识符，使得在多线程或多任务环境中，可以有效地管理和识别服务及其相关资源。
+	
+	通过这个结构体，系统能够更好地跟踪和调度服务的执行。
+*/
 struct service_ud {
+	// 指向 ltask 的指针，表示与服务相关的任务
 	struct ltask *task;
+
+	// 用于唯一标识一个服务(服务的 ID )
 	service_id id;
 };
 
@@ -1126,13 +1137,26 @@ ltask_external_sender(lua_State *L) {
 	return 2;
 }
 
+/*
+	luaopen_ltask_bootstrap 函数为 Lua 提供了一个初始化和管理 ltask 相关功能的接口。
+	它确保库只能初始化一次，并注册了一系列可以在 Lua 中调用的功能函数，以便用户能够方便地使用 ltask 进行多任务处理和调度。
+*/
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
+	// 定义一个静态的原子整型变量 init，用于跟踪模块是否已经初始化。
 	static atomic_int init = 0;
+
+	// 通过 atomic_int_inc 函数将 init 增加 1，并检查其值是否为 1。	
+	// 如果不等于 1，说明模块已经被初始化过，返回一个 Lua 错误，表明该模块只能被要求一次。
 	if (atomic_int_inc(&init) != 1) {
 		return luaL_error(L, "ltask.bootstrap can only require once");
 	}
+
+	// 确保 Lua 的版本与预期的版本匹配，以避免不兼容的问题。
 	luaL_checkversion(L);
+
+	// 定义一个 luaL_Reg 数组，注册一系列与 ltask 相关的函数。
+	// 每个元素是一个包含函数名称和对应 C 函数指针的结构体。例如，{ "init", ltask_init } 表示在 Lua 中可以通过 init 调用 ltask_init 函数。
 	luaL_Reg l[] = {
 		{ "init", ltask_init },
 		{ "deinit", ltask_deinit },
@@ -1151,8 +1175,10 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "external_sender", ltask_external_sender },
 		{ NULL, NULL },
 	};
-	
+	// 创建一个新的 Lua 库，将注册的函数添加到 Lua 的全局环境中，使得用户可以在 Lua 中直接调用这些函数。
 	luaL_newlib(L, l);
+
+	// 函数返回 1，表示成功创建了一个新的库
 	return 1;
 }
 
@@ -1592,9 +1618,26 @@ ltask_debuglog(lua_State *L) {
 
 #endif
 
+/*  这段代码是一个 Lua C API 的实现，用于在 Lua 中注册一组函数，并提供给 Lua 解释器使用.：
+
+	1. 检查 Lua 版本。
+	2. 注册了一系列的 Lua 函数，并将其与 C 函数关联。
+	3. 检查服务 ID，并确保库的正确初始化。
+	4. 提供计数器 API。
+	5. 初始化系统，并返回库的引用。
+	6. 这使得用户在 Lua 中能够调用 C 实现的函数，从而扩展 Lua 的功能。
+*/
+// luaopen_ltask 是库的入口函数
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
+	
+	// 确保 Lua 的版本与当前 C 库的版本匹配。
 	luaL_checkversion(L);
+
+	// 注册库中的函数
+		// luaL_Reg 是一个结构体数组，用于定义 Lua 中可用的函数及其对应的 C 函数。
+		// 每个条目包含一个字符串（Lua 中的函数名）和一个指向相应 C 函数的指针
+		// NULL 作为结束标志。
 	luaL_Reg l[] = {
 		{ "pack", luaseri_pack },
 		{ "unpack", luaseri_unpack },
@@ -1604,10 +1647,12 @@ luaopen_ltask(lua_State *L) {
 		{ NULL, NULL },
 	};
 
+	// 创建一个新的 Lua 表，并将注册的函数添加到该表中。
 	luaL_newlib(L, l);
 
+	// 接下来，类似地注册 ltask 的相关函数：
 	// ltask api
-
+	// 这个数组定义了 ltask 库中的函数。使用 luaL_setfuncs 将它们添加到 Lua 表中
 	luaL_Reg l2[] = {
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
@@ -1632,28 +1677,32 @@ luaopen_ltask(lua_State *L) {
 		{ NULL, NULL },
 	};
 
+	// 从 Lua 注册表中获取一个服务 ID，确保它是一个字符串。如果不是，抛出一个错误。
 	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
 		luaL_error(L, "No service id, the VM is not inited by ltask");
 	}
+	// 获取并转换服务 ID，并从堆栈中弹出该值。
 	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
 	lua_pop(L, 1);
-
+	// 将用户数据推入 Lua 堆栈，并将其与 l2 中的函数关联。
 	lua_pushlightuserdata(L, (void *)ud);
-
 	luaL_setfuncs(L,l2,1);
 
+
+
+	// 同样的，注册计数器 API
 	// counter api
 	luaL_Reg l3[] = {
 		{ "counter", ltask_counter },
 		{ "cpucost", ltask_cpucost },
 		{ NULL, NULL },
 	};
-
-	uint64_t f = systime_frequency();
+	uint64_t f = systime_frequency(); // 获取系统时间频率
 	lua_pushlightuserdata(L, (void *)ud);
-	lua_pushinteger(L, f);
+	lua_pushinteger(L, f);	// lua_pushinteger 用于将系统时间频率推入堆栈
 	luaL_setfuncs(L,l3,2);
 
+	// 系统初始化和返回值
 	sys_init();
 	return 1;
 }
@@ -1724,30 +1773,52 @@ ltask_closeservice(lua_State *L) {
 	return ret;
 }
 
+/*
+	luaopen_ltask_root 函数为 Lua 提供了与 ltask [根服务]相关的接口，确保该模块只能初始化一次，并注册了可以在 Lua 中调用的功能函数。
+	它还确保了服务 ID 的有效性，并将相关用户数据与注册的函数关联，使得服务的初始化和关闭可以在 Lua 中顺利进行
+*/
 LUAMOD_API int
 luaopen_ltask_root(lua_State *L) {
+	// 定义一个静态的原子整型变量 init，用于跟踪模块是否已经初始化。
 	static atomic_int init = 0;
+	// 通过 atomic_int_inc 函数将 init 增加 1，并检查其值是否为 1。
+	// 如果不等于 1，说明模块已经被初始化过，返回一个 Lua 错误，表明该模块只能被要求一次。
 	if (atomic_int_inc(&init) != 1) {
 		return luaL_error(L, "ltask.root can only require once");
 	}
+	// 确保 Lua 的版本与预期的版本匹配，以避免不兼容的问题。
 	luaL_checkversion(L);
 
+	// 定义一个 luaL_Reg 数组，注册与根服务相关的函数。
+	// 包含的函数有：
+	//	init_service: 初始化服务的函数。
+	//	close_service: 关闭服务的函数。
 	luaL_Reg l[] = {
 		{ "init_service", ltask_initservice },
 		{ "close_service", ltask_closeservice },
 		{ NULL, NULL },
 	};
 	
+	// 创建一个新的 Lua 库表，将注册的函数添加到表中，但尚未将其放入全局环境。
 	luaL_newlibtable(L, l);
 
+	// 从 Lua 的注册表中获取服务 ID (LTASK_KEY)，并检查其类型是否为字符串。
+		// 如果获取失败，返回错误，说明当前 VM 不是由 ltask 初始化的。
 	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
 		luaL_error(L, "No service id, the VM is not inited by ltask");
 	}
+
+	// 将服务 ID 的值转换为 struct service_ud 类型的指针，便于后续使用。
 	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
+	// 移除栈顶的一个元素
 	lua_pop(L, 1);
 
+	// 将 ud 指针作为用户数据推入 Lua 栈。
 	lua_pushlightuserdata(L, (void *)ud);
+
+	// 使用 luaL_setfuncs 将用户数据与注册的函数关联，使得函数可以访问该用户数据。
 	luaL_setfuncs(L,l,1);
 
+	// 函数返回 1，表示成功创建了一个新的库。
 	return 1;
 }
